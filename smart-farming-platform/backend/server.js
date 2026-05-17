@@ -156,31 +156,12 @@ app.get('/api/history', verifyToken, async (req, res) => {
 });
 
 /* =========================
-   SOCKET CONNECTION LOG & WEBRTC SIGNALING
+   SOCKET CONNECTION LOG
 ========================= */
 io.on("connection", (socket) => {
-    console.log(`🔌 Client connected: ${socket.id}`);
-
-    // Masuk ke room khusus streaming maggot
-    socket.join("maggot-stream-room");
-
-    // Relai/teruskan penawaran koneksi (Offer) dari HP ke Laptop
-    socket.on("webrtc-offer", (offer) => {
-        socket.to("maggot-stream-room").emit("webrtc-offer", offer);
-    });
-
-    // Relai jawaban koneksi (Answer) dari Laptop ke HP
-    socket.on("webrtc-answer", (answer) => {
-        socket.to("maggot-stream-room").emit("webrtc-answer", answer);
-    });
-
-    // Relai kandidat jalur jaringan (ICE Candidate) antar device
-    socket.on("webrtc-candidate", (candidate) => {
-        socket.to("maggot-stream-room").emit("webrtc-candidate", candidate);
-    });
-
+    console.log(`🔌 Client connected to Node.js Backend: ${socket.id}`);
     socket.on("disconnect", () => {
-        console.log(`❌ Client disconnected: ${socket.id}`);
+        console.log(`❌ Client disconnected from Node.js Backend: ${socket.id}`);
     });
 });
 
@@ -189,7 +170,6 @@ io.on("connection", (socket) => {
 ========================= */
 const PORT = process.env.PORT || 5000;
 
-// Fungsi untuk mencari IPv4 lokal
 const getLocalIP = () => {
     const interfaces = os.networkInterfaces();
     for (const name of Object.keys(interfaces)) {
@@ -202,7 +182,6 @@ const getLocalIP = () => {
     return 'localhost';
 };
 
-// WAJIB: Gunakan '0.0.0.0' agar bisa diakses dari perangkat lain dalam satu Wi-Fi
 server.listen(PORT, '0.0.0.0', () => {
     const localIP = getLocalIP();
     console.log(`\n🚀 Server Backend sudah aktif!`);
@@ -210,5 +189,4 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(`🏠 Local:   http://localhost:${PORT}`);
     console.log(`🌐 Network: http://${localIP}:${PORT}`);
     console.log(`-----------------------------------------\n`);
-    console.log(`💡 Gunakan alamat "Network" di atas pada kode React/HP kamu.`);
 });
