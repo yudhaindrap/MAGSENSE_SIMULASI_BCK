@@ -1,11 +1,13 @@
 const { spawn } = require('child_process');
 const path = require('path');
+const pool = require('../db');
 
-function runXGBoostInference(features) {
+function runXGBoostInference(boxId) {
     return new Promise((resolve, reject) => {
+        // Just pass boxId, python will connect to DB and fetch the full dataset itself
         const pythonProcess = spawn('python', [
             path.join(__dirname, '..', 'predict_xgb.py'),
-            JSON.stringify(features)
+            boxId.toString()
         ]);
 
         let result = '';
@@ -19,10 +21,13 @@ function runXGBoostInference(features) {
 
         pythonProcess.on('close', (code) => {
             try {
-                const parsed = JSON.parse(result);
+                const lines = result.trim().split('\n');
+                const lastLine = lines[lines.length - 1]; // Often python prints pandas warnings, just get the json
+                const parsed = JSON.parse(lastLine);
                 if (parsed.error) reject(parsed.error);
                 else resolve(parsed.harvest_predictions);
             } catch (e) {
+                console.error("Raw python output:", result);
                 reject("Failed to parse ML output");
             }
         });
@@ -34,26 +39,8 @@ function initMLPipeline(io, pool) {
         try {
             const activeBoxes = [1, 2, 3];
             for (const boxId of activeBoxes) {
-                const sensorRes = await pool.query('SELECT * FROM sensor_data WHERE box_id = $1 ORDER BY timestamp DESC LIMIT 1', [boxId]);
-                const cvRes = await pool.query('SELECT * FROM cv_detections WHERE box_id = $1 ORDER BY detected_at DESC LIMIT 1', [boxId]);
-
-                if (sensorRes.rows.length === 0 || cvRes.rows.length === 0) continue;
-
-                const s = sensorRes.rows[0];
-                const c = cvRes.rows[0];
-                const counts = c.detection_counts || {};
-
-                const features = {
-                    suhu_udara_c: s.air_temp,
-                    kelembapan_udara_pct: s.air_humidity,
-                    kelembapan_media_pct: s.media_humidity,
-                    jumlah_baby_larva: counts.baby_larva || 0,
-                    jumlah_adult_larva: counts.adult_larva || 0,
-                    jumlah_prepupa: counts.prepupa || 0,
-                    jumlah_pupa: counts.pupa || 0
-                };
-
-                const predictionDays = await runXGBoostInference(features);
+                // Call python ML directly to retrain and predict using historical postgres data
+                const predictionDays = await runXGBoostInference(boxId);
 
                 await pool.query(`
                     INSERT INTO harvest_predictions (box_id, estimated_days, predicted_at)
@@ -66,9 +53,9 @@ function initMLPipeline(io, pool) {
                 });
             }
         } catch (err) {
-            console.error("❌ Auto-Prediction Pipeline Error:", err.message);
+            console.error("❌ Auto-Prediction Pipeline Error:", err);
         }
-    }, 15000);
+    }, 15000); // 15s interval
 }
 
 module.exports = { initMLPipeline };
